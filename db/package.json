@@ -4,5 +4,8 @@
     },
     "scripts": {
         "start": "node node_modules/@sap/hdi-dynamic-deploy/"
+    },
+    "engines": {
+        "node": "12"
     }
 }
