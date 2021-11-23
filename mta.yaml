@@ -1,0 +1,109 @@
+ID: wf-mt
+_schema-version: "3.1"
+version: 0.0.1
+
+modules:
+  - name: wf-mt-db
+    type: com.sap.xs.hdi-dynamic
+    path: db
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    properties:
+      hdi_dynamic_deploy_user: ${generated-user}
+      hdi_dynamic_deploy_password: ${generated-password}
+    provides:
+      - name: db_api
+        properties:
+          url: ${default-url}
+          user: ${generated-user}
+          password: ${generated-password}
+
+  - name: wf-mt-srv
+    type: nodejs
+    path: srv
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    provides:
+      - name: srv_api
+        properties:
+          url: ${default-url}
+    properties:
+      SAP_JWT_TRUST_ACL:
+        - clientid: "*"
+          identityzone: "sap-provisioning"
+    requires:
+      - name: wf-mt-uaa
+      - name: wf-mt-registry
+      - name: wf-mt-sm
+      - name: db_api
+        properties:
+          db_api_url: ~{url}
+          db_api_user: ~{user}
+          db_api_password: ~{password}
+      - name: wf-mt-dest
+
+  - name: wf-mt
+    type: html5
+    path: app
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    provides:
+      - name: app_api
+        properties:
+          url: ${default-url}
+          application: ${app-name}
+    properties:
+      TENANT_HOST_PATTERN: '^(.*)-${space}-${app-name}.${default-domain}'
+    requires:
+      - name: wf-mt-uaa
+      - name: srv_api
+        group: destinations
+        properties:
+          name: srv
+          url: ~{url}
+          forwardAuthToken: true
+
+resources:
+  - name: wf-mt-uaa
+    type: org.cloudfoundry.managed-service
+    requires: 
+      - name: app_api
+    properties:
+      XSAPPNAME: ${xsuaa-app}
+    parameters:
+      path: ./xs-security.json
+      service: xsuaa
+      service-plan: application
+      xsuaa-app: ${space}-~{app_api/application}
+      config:
+        xsappname: ${xsuaa-app}
+  - name: wf-mt-sm
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: service-manager
+      service-plan: container
+  - name: wf-mt-registry
+    type: org.cloudfoundry.managed-service
+    requires:
+      - name: wf-mt-uaa
+    parameters:
+      service: saas-registry
+      service-plan: application
+      service-name: wf-mt-registry
+      config:
+        xsappname: ~{wf-mt-uaa/XSAPPNAME}
+        appName: wf-mt
+        displayName: 'WF Multitenant'
+        description: 'WF SaaS Business Application'
+        category: 'Partner PM'
+        appUrls:
+          onSubscription: https://${org}-${space}-wf-mt-srv.${default-domain}/callback/v1.0/tenants/{tenantId}
+          getDependencies: https://${org}-${space}-wf-mt-srv.${default-domain}/callback/v1.0/dependencies
+  - name: wf-mt-dest
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
